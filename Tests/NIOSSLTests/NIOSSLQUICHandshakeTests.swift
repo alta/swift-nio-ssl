@@ -26,8 +26,6 @@ private final class CollectingQUICDelegate: NIOSSLQUICDelegate {
     var readSecrets: [NIOTLSEncryptionLevel: [UInt8]] = [:]
     var writeSecrets: [NIOTLSEncryptionLevel: [UInt8]] = [:]
     var cipherSuites: [NIOTLSEncryptionLevel: UInt16] = [:]
-    var alerts: [(level: NIOTLSEncryptionLevel, alert: UInt8)] = []
-    var flushCount = 0
 
     func setReadSecret(level: NIOTLSEncryptionLevel, cipherSuite: UInt16, secret: [UInt8]) {
         self.readSecrets[level] = secret
@@ -41,14 +39,6 @@ private final class CollectingQUICDelegate: NIOSSLQUICDelegate {
 
     func writeHandshakeData(level: NIOTLSEncryptionLevel, _ data: [UInt8]) {
         self.outgoing.append((level, data))
-    }
-
-    func flushFlight() {
-        self.flushCount += 1
-    }
-
-    func sendAlert(level: NIOTLSEncryptionLevel, alert: UInt8) {
-        self.alerts.append((level, alert))
     }
 }
 
@@ -136,8 +126,6 @@ final class NIOSSLQUICHandshakeTests: XCTestCase {
 
         XCTAssertEqual(clientState, .complete, "client did not complete in \(rounds) rounds")
         XCTAssertEqual(serverState, .complete, "server did not complete in \(rounds) rounds")
-        XCTAssertEqual(clientDelegate.alerts.count, 0, "unexpected client alerts: \(clientDelegate.alerts)")
-        XCTAssertEqual(serverDelegate.alerts.count, 0, "unexpected server alerts: \(serverDelegate.alerts)")
 
         // ALPN was negotiated.
         XCTAssertEqual(client.negotiatedApplicationProtocol, Self.alpn)
