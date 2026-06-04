@@ -69,9 +69,9 @@ jobs:
 
     macos-test-fork:
         name: macOS tests (fork)
-        # The fork has no access to Apple's self-hosted runner pool, so it runs
+        # A fork has no access to Apple's self-hosted runner pool, so it runs
         # macOS tests on GitHub-hosted runners. Skipped in the apple org, where
-        # macos-tests runs instead. Remove this job if accepted upstream.
+        # macos-tests runs instead.
         if: ${{ github.repository_owner != 'apple' }}
         runs-on: macos-latest
         steps:
