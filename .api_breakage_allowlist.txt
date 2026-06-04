@@ -1,0 +1,2 @@
+func NIOSSLQUICDelegate.flushFlight() has been removed
+func NIOSSLQUICDelegate.sendAlert(level:alert:) has been removed
