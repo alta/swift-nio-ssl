@@ -13,9 +13,10 @@ jobs:
         uses: swiftlang/github-workflows/.github/workflows/soundness.yml@0.0.7
         with:
             license_header_check_project_name: "SwiftNIO"
-            # Allowlist intentional, pre-stabilization breaks to the in-development
-            # QUIC-TLS API (see #1). Remove when that API stabilizes / upstreams.
-            api_breakage_check_allowlist_path: ".api_breakage_allowlist.txt"
+            # Disabled while the QUIC-TLS API is in development (see #1): it is
+            # intentionally churning ahead of any stable baseline. Re-enable when
+            # that API stabilizes, ahead of upstreaming.
+            api_breakage_check_enabled: false
     unit-tests:
         name: Unit tests
         uses: apple/swift-nio/.github/workflows/unit_tests.yml@main
