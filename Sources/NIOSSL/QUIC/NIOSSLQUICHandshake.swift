@@ -171,7 +171,11 @@ public final class NIOSSLQUICHandshake {
     /// handshake raised, if any (alerts are always fatal in QUIC), otherwise the
     /// underlying BoringSSL error.
     private func failure(_ error: BoringSSLError) -> any Error {
+        // Consume the alert: a fatal alert ends the handshake, but post-handshake
+        // processing can fail later for unrelated reasons, and a stale alert must
+        // not masquerade as that failure's cause.
         if let alert = self.pendingAlert {
+            self.pendingAlert = nil
             return NIOSSLQUICError.tlsAlert(alert)
         }
         return NIOSSLError.handshakeFailed(error)
@@ -215,9 +219,11 @@ public final class NIOSSLQUICHandshake {
         secretLength: Int,
         isRead: Bool
     ) -> Bool {
-        guard let delegate = self.delegate, let secret else { return false }
+        // BoringSSL always supplies the negotiated cipher alongside a secret; a
+        // null cipher is a broken contract, so fail the callback loudly.
+        guard let delegate = self.delegate, let secret, let cipher else { return false }
         let bytes = Array(UnsafeBufferPointer(start: secret, count: secretLength))
-        let cipherSuite = cipher.map { CNIOBoringSSL_SSL_CIPHER_get_protocol_id($0) } ?? 0
+        let cipherSuite = CNIOBoringSSL_SSL_CIPHER_get_protocol_id(cipher)
         let mapped = NIOTLSEncryptionLevel(level)
         if isRead {
             delegate.setReadSecret(level: mapped, cipherSuite: cipherSuite, secret: bytes)
