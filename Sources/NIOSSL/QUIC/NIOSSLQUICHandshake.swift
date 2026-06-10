@@ -207,9 +207,8 @@ public final class NIOSSLQUICHandshake {
         secretLength: Int,
         isRead: Bool
     ) -> Bool {
-        // BoringSSL's QUIC contract always supplies the negotiated cipher with a
-        // secret; failing the callback on a null one turns a broken contract into
-        // a loud handshake error instead of silently reporting cipher suite 0.
+        // BoringSSL always supplies the negotiated cipher alongside a secret; a
+        // null cipher is a broken contract, so fail the callback loudly.
         guard let delegate = self.delegate, let secret, let cipher else { return false }
         let bytes = Array(UnsafeBufferPointer(start: secret, count: secretLength))
         let cipherSuite = CNIOBoringSSL_SSL_CIPHER_get_protocol_id(cipher)
