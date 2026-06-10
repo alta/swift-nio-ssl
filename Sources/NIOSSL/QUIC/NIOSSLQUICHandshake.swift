@@ -207,9 +207,12 @@ public final class NIOSSLQUICHandshake {
         secretLength: Int,
         isRead: Bool
     ) -> Bool {
-        guard let delegate = self.delegate, let secret else { return false }
+        // BoringSSL's QUIC contract always supplies the negotiated cipher with a
+        // secret; failing the callback on a null one turns a broken contract into
+        // a loud handshake error instead of silently reporting cipher suite 0.
+        guard let delegate = self.delegate, let secret, let cipher else { return false }
         let bytes = Array(UnsafeBufferPointer(start: secret, count: secretLength))
-        let cipherSuite = cipher.map { CNIOBoringSSL_SSL_CIPHER_get_protocol_id($0) } ?? 0
+        let cipherSuite = CNIOBoringSSL_SSL_CIPHER_get_protocol_id(cipher)
         let mapped = NIOTLSEncryptionLevel(level)
         if isRead {
             delegate.setReadSecret(level: mapped, cipherSuite: cipherSuite, secret: bytes)
