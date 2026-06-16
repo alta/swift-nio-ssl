@@ -6,8 +6,9 @@ permissions:
 on:
     push:
         branches: [main]
-    schedule:
-        - cron: "0 8,20 * * *"
+    # Budget: scheduled runs temporarily disabled; re-enable later.
+    # schedule:
+    #     - cron: "0 8,20 * * *"
 
 jobs:
     unit-tests:
