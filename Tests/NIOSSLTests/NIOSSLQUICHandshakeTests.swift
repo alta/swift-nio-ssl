@@ -679,4 +679,92 @@ final class NIOSSLQUICHandshakeTests: XCTestCase {
         XCTAssertFalse(verifierRan, "optional client auth: no certificate means the verifier is not consulted")
         XCTAssertNil(server.verifiedChain)
     }
+
+    /// A server context that requires the client to present a certificate
+    /// (`certificateVerification` mapping to `SSL_VERIFY_FAIL_IF_NO_PEER_CERT`).
+    /// A trust root is set so the context builds; the custom verifier overrides
+    /// the built-in chain check regardless.
+    private func makeRequiringServerContext(
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws -> NIOSSLContext {
+        let (certificate, privateKey) = generateSelfSignedCert()
+        var configuration = TLSConfiguration.makeServerConfiguration(
+            certificateChain: [.certificate(certificate)],
+            privateKey: .privateKey(privateKey)
+        )
+        configuration.certificateVerification = .fullVerification
+        configuration.trustRoots = .certificates([certificate])
+        configuration.applicationProtocols = [Self.alpn]
+        return try assertNoThrowWithValue(NIOSSLContext(configuration: configuration), file: file, line: line)
+    }
+
+    func testMutualTLSRequiredRejectsClientWithoutCertificate() throws {
+        // certificateVerification .fullVerification requires the client to present
+        // a certificate: a client that sends none fails the handshake before the
+        // verifier runs (SSL_VERIFY_FAIL_IF_NO_PEER_CERT).
+        let client = Endpoint(
+            try assertNoThrowWithValue(
+                NIOSSLQUICHandshake(
+                    context: try self.makeClientContext(),
+                    role: .client,
+                    serverHostname: "localhost",
+                    localTransportParameters: Self.clientTransportParameters
+                )
+            )
+        )
+        var verifierRan = false
+        let server = Endpoint(
+            try assertNoThrowWithValue(
+                NIOSSLQUICHandshake(
+                    context: try self.makeRequiringServerContext(),
+                    role: .server,
+                    localTransportParameters: Self.serverTransportParameters,
+                    customCertificateVerification: true
+                )
+            )
+        )
+        server.verify = { _ in
+            verifierRan = true
+            return .certificateVerified
+        }
+        XCTAssertThrowsError(try self.pump(client: client, server: server)) { error in
+            guard case .tlsAlert = error as? NIOSSLQUICError else {
+                XCTFail("expected NIOSSLQUICError.tlsAlert, got \(error)")
+                return
+            }
+        }
+        XCTAssertFalse(verifierRan, "a missing required client certificate fails before the verifier")
+    }
+
+    func testMutualTLSRequiredCompletesWithClientCertificate() throws {
+        // With the client presenting a certificate, a requiring server verifies it
+        // through the same park/resume and completes.
+        let (clientCertificate, clientKey) = generateSelfSignedCert()
+        let client = Endpoint(
+            try assertNoThrowWithValue(
+                NIOSSLQUICHandshake(
+                    context: try self.makeClientContext(presenting: clientCertificate, privateKey: clientKey),
+                    role: .client,
+                    serverHostname: "localhost",
+                    localTransportParameters: Self.clientTransportParameters
+                )
+            )
+        )
+        let server = Endpoint(
+            try assertNoThrowWithValue(
+                NIOSSLQUICHandshake(
+                    context: try self.makeRequiringServerContext(),
+                    role: .server,
+                    localTransportParameters: Self.serverTransportParameters,
+                    customCertificateVerification: true
+                )
+            )
+        )
+        server.verify = { _ in .certificateVerified }
+        let (clientState, serverState) = try self.pump(client: client, server: server)
+        XCTAssertEqual(clientState, .complete)
+        XCTAssertEqual(serverState, .complete)
+        XCTAssertEqual(server.verifiedChain?.first, clientCertificate)
+    }
 }

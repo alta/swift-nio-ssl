@@ -133,10 +133,12 @@ public final class NIOSSLQUICHandshake {
     ///     application then owns trust evaluation *and* the hostname check,
     ///     replacing the `SSL_CTX` verification and the `serverHostname` name
     ///     check (SNI is still sent). For a server, the handshake requests the
-    ///     client's certificate and verifies it the same way; client
-    ///     authentication is optional, so a client that sends none surfaces an
-    ///     empty chain for the application to rule on. Default `false` leaves
-    ///     verification unchanged.
+    ///     client's certificate and verifies it the same way; whether a client
+    ///     *must* present one follows the context's
+    ///     ``TLSConfiguration/certificateVerification`` (`.fullVerification` /
+    ///     `.noHostnameVerification` require it, `.none` leaves it optional — a
+    ///     client that sends none then surfaces an empty chain for the application
+    ///     to rule on). Default `false` leaves verification unchanged.
     public init(
         context: NIOSSLContext,
         role: NIOSSLQUICRole,
@@ -171,8 +173,10 @@ public final class NIOSSLQUICHandshake {
             if customCertificateVerification {
                 // The application owns verification, so force VERIFY_PEER (the
                 // callback must fire even when the context's mode is `.none`) and
-                // skip the built-in name check — the callback owns that too.
-                Self.installCustomVerify(on: ssl)
+                // skip the built-in name check — the callback owns that too. A
+                // server always presents its certificate, so requiring one adds
+                // nothing here.
+                Self.installCustomVerify(on: ssl, requirePeerCertificate: false)
             } else if let serverHostname,
                 case .fullVerification = context.configuration.certificateVerification
             {
@@ -183,10 +187,19 @@ public final class NIOSSLQUICHandshake {
             if customCertificateVerification {
                 // Mutual TLS (RFC 9001 § 4): request the client's certificate and
                 // hand its chain to the application, the same park/resume the
-                // client uses for the server's. The request is optional (no
-                // `SSL_VERIFY_FAIL_IF_NO_PEER_CERT`), so a client that sends none
-                // surfaces an empty chain rather than failing the handshake here.
-                Self.installCustomVerify(on: ssl)
+                // client uses for the server's. Whether a client *must* present
+                // one follows the context's verification mode, the same lever the
+                // record path uses: `.fullVerification` / `.noHostnameVerification`
+                // require it (`SSL_VERIFY_FAIL_IF_NO_PEER_CERT`), `.none` leaves it
+                // optional — a client that sends none is not failed here.
+                let requirePeerCertificate: Bool
+                switch context.configuration.certificateVerification {
+                case .fullVerification, .noHostnameVerification:
+                    requirePeerCertificate = true
+                case .none:
+                    requirePeerCertificate = false
+                }
+                Self.installCustomVerify(on: ssl, requirePeerCertificate: requirePeerCertificate)
             }
         }
 
@@ -227,11 +240,19 @@ public final class NIOSSLQUICHandshake {
     /// application can evaluate the peer chain (RFC 9001 § 4). `SSL_VERIFY_PEER`
     /// forces the callback to run regardless of the context's verify mode, since
     /// opting in means the application owns trust evaluation entirely. On a server
-    /// it also makes the handshake request the client's certificate; without
-    /// `SSL_VERIFY_FAIL_IF_NO_PEER_CERT` that request is optional, so a client
-    /// that sends none still reaches the callback, with an empty chain.
-    private static func installCustomVerify(on ssl: OpaquePointer) {
-        CNIOBoringSSL_SSL_set_custom_verify(ssl, SSL_VERIFY_PEER) { ssl, _ in
+    /// it also makes the handshake request the client's certificate;
+    /// `requirePeerCertificate` adds `SSL_VERIFY_FAIL_IF_NO_PEER_CERT`, so a client
+    /// that sends none fails the handshake before the callback (mandatory mutual
+    /// TLS) rather than reaching it with an empty chain (optional).
+    ///
+    /// - Parameters:
+    ///   - ssl: the handshake's `SSL` object.
+    ///   - requirePeerCertificate: whether an absent peer certificate fails the
+    ///     handshake. Always `false` for a client (a server presents one
+    ///     unconditionally); on a server it follows the verification mode.
+    private static func installCustomVerify(on ssl: OpaquePointer, requirePeerCertificate: Bool) {
+        let mode = requirePeerCertificate ? SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT : SSL_VERIFY_PEER
+        CNIOBoringSSL_SSL_set_custom_verify(ssl, mode) { ssl, _ in
             guard let handshake = NIOSSLQUICHandshake.from(ssl: ssl) else {
                 return ssl_verify_invalid
             }
