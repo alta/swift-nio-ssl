@@ -665,9 +665,18 @@ final class NIOSSLQUICHandshakeTests: XCTestCase {
                 )
             )
         )
-        server.verify = { _ in .certificateVerified }
+        // With optional client auth, BoringSSL does not consult the verifier when
+        // the client presents no certificate, so a server cannot reject an
+        // anonymous client through `verify` — the handshake simply completes.
+        var verifierRan = false
+        server.verify = { _ in
+            verifierRan = true
+            return .certificateVerified
+        }
         let (clientState, serverState) = try self.pump(client: client, server: server)
         XCTAssertEqual(clientState, .complete)
         XCTAssertEqual(serverState, .complete)
+        XCTAssertFalse(verifierRan, "optional client auth: no certificate means the verifier is not consulted")
+        XCTAssertNil(server.verifiedChain)
     }
 }
