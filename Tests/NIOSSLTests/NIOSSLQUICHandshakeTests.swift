@@ -51,8 +51,8 @@ private final class Endpoint {
 
     /// Advances the handshake, draining what each step produces into the
     /// collectors. If a `verify` provider is set, a `wantsCertificateVerify`
-    /// park is resolved inline — record the chain, supply the verdict, advance
-    /// again — so the pump treats custom verification as a single step.
+    /// park is resolved inline—record the chain, supply the verdict, advance
+    /// again—so the pump treats custom verification as a single step.
     @discardableResult
     func advance() throws -> NIOSSLQUICHandshake.State {
         var state = try self.handshake.advance()
@@ -210,8 +210,8 @@ final class NIOSSLQUICHandshakeTests: XCTestCase {
         // coverage: a complete handshake message of the wrong type in place of
         // the ServerHello makes the client raise a fatal alert, which surfaces
         // as the thrown error (alerts are always fatal in QUIC; the QUIC layer
-        // maps them to CONNECTION_CLOSE). The message must be complete — the
-        // four-byte header below says type 0x14, one-byte body — because an
+        // maps them to CONNECTION_CLOSE). The message must be complete—the
+        // four-byte header below says type 0x14, one-byte body—because an
         // incomplete one would just buffer awaiting the rest.
         let client = Endpoint(
             try assertNoThrowWithValue(
@@ -465,7 +465,7 @@ final class NIOSSLQUICHandshakeTests: XCTestCase {
     /// A client that hands the peer chain to `verify` instead of verifying it
     /// built-in, paired with a server presenting the generated self-signed
     /// certificate. The client context trusts nothing and the server hostname,
-    /// when given, need not match the certificate — under custom verification
+    /// when given, need not match the certificate—under custom verification
     /// the verifier owns both trust and the name check.
     private func makeCustomVerifyingPair(
         serverHostname: String?,
@@ -509,7 +509,7 @@ final class NIOSSLQUICHandshakeTests: XCTestCase {
 
     func testCustomVerificationRejectionFailsHandshake() throws {
         // A `.failed` verdict becomes ssl_verify_invalid, which fails the
-        // handshake with a fatal certificate alert — surfaced, like any QUIC
+        // handshake with a fatal certificate alert—surfaced, like any QUIC
         // alert, as a thrown NIOSSLQUICError.tlsAlert.
         let (client, server, _) = try self.makeCustomVerifyingPair(
             serverHostname: "localhost",
@@ -667,7 +667,7 @@ final class NIOSSLQUICHandshakeTests: XCTestCase {
         )
         // With optional client auth, BoringSSL does not consult the verifier when
         // the client presents no certificate, so a server cannot reject an
-        // anonymous client through `verify` — the handshake simply completes.
+        // anonymous client through `verify`—the handshake simply completes.
         var verifierRan = false
         server.verify = { _ in
             verifierRan = true
