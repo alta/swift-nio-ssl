@@ -126,14 +126,17 @@ public final class NIOSSLQUICHandshake {
     ///     Ignored for a server.
     ///   - localTransportParameters: this endpoint's QUIC transport parameters,
     ///     already encoded (RFC 9000 § 18). They are carried in a TLS extension.
-    ///   - customCertificateVerification: for a client, hand the peer's
-    ///     certificate chain to the application instead of verifying it built-in
-    ///     (RFC 9001 § 4): the handshake parks at ``State/wantsCertificateVerify(_:)``
-    ///     and ``resumeVerification(_:)`` supplies the verdict. The application
-    ///     then owns trust evaluation *and* the hostname check, replacing the
-    ///     `SSL_CTX` verification and the `serverHostname` name check (SNI is
-    ///     still sent). Default `false` leaves verification unchanged. Ignored for
-    ///     a server.
+    ///   - customCertificateVerification: hand the peer's certificate chain to
+    ///     the application instead of verifying it built-in (RFC 9001 § 4): the
+    ///     handshake parks at ``State/wantsCertificateVerify(_:)`` and
+    ///     ``resumeVerification(_:)`` supplies the verdict. For a client, the
+    ///     application then owns trust evaluation *and* the hostname check,
+    ///     replacing the `SSL_CTX` verification and the `serverHostname` name
+    ///     check (SNI is still sent). For a server, the handshake requests the
+    ///     client's certificate and verifies it the same way; client
+    ///     authentication is optional, so a client that sends none surfaces an
+    ///     empty chain for the application to rule on. Default `false` leaves
+    ///     verification unchanged.
     public init(
         context: NIOSSLContext,
         role: NIOSSLQUICRole,
@@ -177,6 +180,14 @@ public final class NIOSSLQUICHandshake {
             }
         case .server:
             CNIOBoringSSL_SSL_set_accept_state(ssl)
+            if customCertificateVerification {
+                // Mutual TLS (RFC 9001 § 4): request the client's certificate and
+                // hand its chain to the application, the same park/resume the
+                // client uses for the server's. The request is optional (no
+                // `SSL_VERIFY_FAIL_IF_NO_PEER_CERT`), so a client that sends none
+                // surfaces an empty chain rather than failing the handshake here.
+                Self.installCustomVerify(on: ssl)
+            }
         }
 
         let transportParametersResult = localTransportParameters.withUnsafeBufferPointer {
@@ -215,7 +226,10 @@ public final class NIOSSLQUICHandshake {
     /// Installs the custom-verify callback that parks the handshake so the
     /// application can evaluate the peer chain (RFC 9001 § 4). `SSL_VERIFY_PEER`
     /// forces the callback to run regardless of the context's verify mode, since
-    /// opting in means the application owns trust evaluation entirely.
+    /// opting in means the application owns trust evaluation entirely. On a server
+    /// it also makes the handshake request the client's certificate; without
+    /// `SSL_VERIFY_FAIL_IF_NO_PEER_CERT` that request is optional, so a client
+    /// that sends none still reaches the callback, with an empty chain.
     private static func installCustomVerify(on ssl: OpaquePointer) {
         CNIOBoringSSL_SSL_set_custom_verify(ssl, SSL_VERIFY_PEER) { ssl, _ in
             guard let handshake = NIOSSLQUICHandshake.from(ssl: ssl) else {
